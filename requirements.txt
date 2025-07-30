@@ -1,0 +1,17 @@
+# Core app
+streamlit>=1.34.0
+streamlit-autorefresh>=0.1.0
+
+# Data wrangling & plotting
+pandas>=2.2.2
+numpy>=1.26.4
+plotly>=5.22.0
+
+# Market‑data helpers
+yfinance>=0.2.40
+cloudscraper>=1.2.71
+requests>=2.32.3
+certifi>=2025.5.1
+
+# TradingView scraper (git install)
+tvdatafeed @ git+https://github.com/rongardF/tvdatafeed.git
