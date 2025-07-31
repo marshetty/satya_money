@@ -34,7 +34,7 @@ VWAP_LOG_CSV         = OUT_DIR / "nifty_vwap_log.csv"
 
 MAX_NEIGHBORS_LIMIT  = 20
 IMBALANCE_TRIGGER    = 30.0         # %
-VWAP_TOLERANCE_PTS   = 15.0          # alert when |spot - vwap| <= tolerance
+VWAP_TOLERANCE_PTS   = 15.0          # |spot − rolling-VWAP| tolerance
 
 # ---- HARD-CODED TradingView credentials (REPLACE THESE) ----
 TV_USERNAME          = "YOUR_TV_USERNAME"
@@ -509,7 +509,6 @@ class StoreMem:
         self.last_opt: dt.datetime | None = None
 
         self.vwap_latest: float | None = None
-        self.vwap_df15: pd.DataFrame | None = None
         self.last_tv: dt.datetime | None = None
 
         self.vwap_alert: str = "NO ALERT"
@@ -542,7 +541,7 @@ def write_vwap_files(stamp: str, vwap_latest: float | None, spot: float | None, 
         OUT_DIR.mkdir(parents=True, exist_ok=True)
         v = f"{vwap_latest:.2f}" if vwap_latest is not None else "NA"
         s = f"{float(spot):.2f}" if spot is not None else "NA"
-        VWAP_NOW_TXT.write_text(f"{stamp} IST | VWAP15m={v} | Spot={s} | Signal={suggestion}\n")
+        VWAP_NOW_TXT.write_text(f"{stamp} IST | VWAP15m_roll={v} | Spot={s} | Signal={suggestion}\n")
         header_needed = not VWAP_LOG_CSV.exists()
         with VWAP_LOG_CSV.open("a", encoding="utf-8") as f:
             if header_needed:
@@ -559,7 +558,7 @@ def tradingview_loop(mem: StoreMem):
     1. Pull 1‑minute candles from TradingView every TV_FETCH_SECONDS.
     2. If a fresh 09:09 IST price appears, update ATM → store → *immediately*
        rebuild the option‑chain dataframe so imbalance / suggestion stay current.
-    3. Compute session VWAP (15‑minute cumulative) for the dashboard + alert.
+    3. Compute rolling VWAP (last 15 minutes) for the dashboard + alert.
     4. Write a one‑line status file and append to the rolling VWAP CSV log.
     """
 
@@ -599,12 +598,11 @@ def tradingview_loop(mem: StoreMem):
                             log.error("CSV write failed (TV‑trigger): %s", e)
                         log.info("Imbalance refreshed immediately after ATM upgrade")
 
-            # ---- 3) VWAP (15‑minute session cumulative) -----------------------
-            vwap_latest, df15 = compute_session_vwap_15m(df1)
+            # ---- 3) VWAP (rolling 15-minute window) ---------------------------
+            vwap_latest = compute_rolling_vwap(df1, 15)    # hard-coded 15 min
             with mem.lock:
                 mem.last_tv     = now_ist()
                 mem.vwap_latest = vwap_latest
-                mem.vwap_df15   = df15
 
             # ---- 4) Evaluate VWAP alert ---------------------------------------
             with mem.lock:
@@ -709,7 +707,7 @@ c1, c2, c3, c4, c5 = st.columns(5)
 c1.metric("Last OC pull", last_opt.strftime("%H:%M:%S") if last_opt else "—")
 c2.metric("Last TV pull", last_tv.strftime("%H:%M:%S") if last_tv else "—")
 c3.metric("Spot (underlying)", f"{meta.get('underlying', float('nan')):,.2f}" if meta else "—")
-c4.metric("VWAP (15m session)", f"{vwap_latest:,.2f}" if vwap_latest else "—")
+c4.metric("VWAP (last 15 m)", f"{vwap_latest:,.2f}" if vwap_latest else "—")
 c5.metric("VWAP tolerance", f"±{VWAP_tol:.0f} pts")
 
 if df_live is None or df_live.empty:
@@ -761,7 +759,7 @@ k5.metric("Imbalance (PUTS − CALLS)", f"{imbalance_pct:,.2f}%")
 
 # VWAP/Spot caption
 if vwap_latest is not None and spot is not None:
-    st.caption(f"VWAP15m: **{vwap_latest:,.2f}**  •  Spot: **{spot:,.2f}**  •  Diff: **{spot - vwap_latest:+.2f}**")
+    st.caption(f"VWAP 15-min: **{vwap_latest:,.2f}**  •  Spot: **{spot:,.2f}**  •  Δ = **{spot - vwap_latest:+.2f}**")
 else:
     st.caption("VWAP or Spot not available yet. Check logs if this persists.")
 
