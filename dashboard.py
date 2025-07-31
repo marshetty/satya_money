@@ -72,6 +72,24 @@ log = setup_logger()
 def now_ist()  -> dt.datetime: return dt.datetime.now(IST)
 def today_str()               : return now_ist().strftime("%Y%m%d")
 
+# ---------- round to nearest 50 ----------
+def round_to_50(x: float) -> int:
+    """Round to nearest 50; 24735 → 24750, 24724 → 24700."""
+    return int(round(x / 50.0) * 50)
+
+# ---------- Build OC dataframe + imbalance ----------
+def build_df_with_imbalance(raw: dict, store_stub: dict):
+    """
+    Returns (df, meta) with:
+      • ΔOI per strike (current-week expiry)
+      • ΣPUT, ΣCALL, %s, imbalance %, suggestion
+      • handles ATM capture / neighbor slicing
+    The full 150-line implementation is unchanged from the earlier code;
+    make sure you paste the ENTIRE function here.
+    """
+    # … < full function body from previous answer > …
+    return df, meta
+
 # ---------- ATM store (JSON) -------------
 def load_atm_store() -> dict:
     if ATM_STORE_PATH.exists():
@@ -169,24 +187,6 @@ class Store: pass
 mem = Store(); mem.lock = threading.Lock()
 mem.df_opt = None; mem.meta_opt={}; mem.last_opt=None
 mem.vwap_latest=None; mem.last_tv=None; mem.vwap_alert="NO ALERT"; mem.last_alert_key=""
-
-# ---------- round to nearest 50 ----------
-def round_to_50(x: float) -> int:
-    """Round to nearest 50; 24735 → 24750, 24724 → 24700."""
-    return int(round(x / 50.0) * 50)
-
-# ---------- Build OC dataframe + imbalance ----------
-def build_df_with_imbalance(raw: dict, store_stub: dict):
-    """
-    Returns (df, meta) with:
-      • ΔOI per strike (current-week expiry)
-      • ΣPUT, ΣCALL, %s, imbalance %, suggestion
-      • handles ATM capture / neighbor slicing
-    The full 150-line implementation is unchanged from the earlier code;
-    make sure you paste the ENTIRE function here.
-    """
-    # … < full function body from previous answer > …
-    return df, meta
     
 # ---------- Loops -------------------------
 def option_chain_loop():
