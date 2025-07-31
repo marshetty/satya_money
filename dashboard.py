@@ -34,7 +34,7 @@ VWAP_LOG_CSV         = OUT_DIR / "nifty_vwap_log.csv"
 
 MAX_NEIGHBORS_LIMIT  = 20
 IMBALANCE_TRIGGER    = 30.0         # %
-VWAP_TOLERANCE_PTS   = 5.0          # alert when |spot - vwap| <= tolerance
+VWAP_TOLERANCE_PTS   = 15.0          # alert when |spot - vwap| <= tolerance
 
 # ---- HARD-CODED TradingView credentials (REPLACE THESE) ----
 TV_USERNAME          = "YOUR_TV_USERNAME"
@@ -293,53 +293,38 @@ def yahoo_open_today_ist() -> float | None:
     log.error("Yahoo open failed after retries.")
     return None
 
-# -------- VWAP 15m --------
-def compute_session_vwap_15m(df_1m: pd.DataFrame) -> tuple[float | None, pd.DataFrame]:
-    """Session VWAP on 15m bars, last trading session fallback."""
-    if df_1m is None or df_1m.empty or not isinstance(df_1m.index, pd.DatetimeIndex):
-        log.error("compute_session_vwap_15m: invalid df_1m")
-        return None, pd.DataFrame()
+# -------- Rolling VWAP over the last N minutes --------
+def compute_rolling_vwap(df_1m: pd.DataFrame, lookback_min: int) -> float | None:
+    """
+    Return the VWAP over the last <lookback_min> minutes.
+    Requires at least one bar inside that window; returns None if not enough data.
+    """
+    if (
+        df_1m is None or df_1m.empty
+        or not isinstance(df_1m.index, pd.DatetimeIndex)
+        or lookback_min <= 0
+    ):
+        return None
 
     df = df_1m.copy()
+    # ensure index is IST
     if df.index.tz is None:
         df.index = df.index.tz_localize("UTC").tz_convert("Asia/Kolkata")
     else:
         df.index = df.index.tz_convert("Asia/Kolkata")
 
-    latest_ts = df.index.max()
-    if pd.isna(latest_ts):
-        log.error("compute_session_vwap_15m: latest_ts is NaN")
-        return None, pd.DataFrame()
+    end_ts   = df.index.max()
+    start_ts = end_ts - dt.timedelta(minutes=lookback_min)
+    df       = df[df.index >= start_ts]
 
-    session_date = latest_ts.date()
-    start = dt.datetime.combine(session_date, dt.time(9, 15), tzinfo=IST)
-    end   = dt.datetime.combine(session_date, dt.time(15, 30), tzinfo=IST)
-
-    df = df[(df.index >= start) & (df.index <= end)]
     if df.empty:
-        log.error("compute_session_vwap_15m: empty after session filter")
-        return None, pd.DataFrame()
+        return None
 
     price = df["close"].astype(float)
     vol   = df["volume"].fillna(0).astype(float)
+    vwap  = (price * vol).sum() / vol.sum() if vol.sum() else None
+    return float(vwap) if vwap is not None else None
 
-    df["pv"] = price * vol
-    df["cum_vol"] = vol.cumsum()
-    df["cum_pv"]  = df["pv"].cumsum()
-    df["vwap"]    = df["cum_pv"] / df["cum_vol"].replace({0: math.nan})
-
-    df15 = df.resample("15T").agg({
-        "open": "first",
-        "high": "max",
-        "low":  "min",
-        "close":"last",
-        "volume":"sum",
-        "vwap":"last"
-    }).dropna(subset=["close"])
-
-    vwap_latest = float(df15["vwap"].iloc[-1]) if not df15.empty else None
-    log.info("VWAP computed: %s", f"{vwap_latest:.2f}" if vwap_latest is not None else "None")
-    return vwap_latest, df15
 
 # ---------------- Weekday neighbors mapping ----------------
 def neighbors_by_weekday(d: dt.date) -> int:
